@@ -1,0 +1,11 @@
+services:
+  laravel.test:
+    labels:
+      - 'traefik.enable=true'
+      - 'traefik.port=80'
+      - 'traefik.http.routers.UNIQUE_SERVICE_NAME.rule=HostRegexp(`${APP_SERVICE:-laravel.test}`, `{subdomain:[^.]+}.${APP_SERVICE:-laravel.test}`)'
+    networks:
+      - traefik
+networks:
+  traefik:
+    external: true
