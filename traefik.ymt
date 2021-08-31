@@ -1,6 +1,3 @@
-defaultEntryPoints:
-  - websecure
-
 global:
   checkNewVersion: true
   sendAnonymousUsage: false
@@ -19,15 +16,14 @@ entrypoints:
       tls:
         certResolver: leresolver
         domains:
-          - main: 'lvs.finag.in'
+          - main: '${DOMAIN:-test}'
             sans:
-              - '*.lvs.finag.in'
-
+              - '*.${DOMAIN:-test}'
 
 providers:
   docker:
     endpoint: unix:///var/run/docker.sock
-    defaultRule: 'HostRegexp(`{{ coalesce (index .Labels "com.docker.compose.project") (normalize .Name) }}.lvs.finag.in`)'
+    defaultRule: 'HostRegexp(`{{ coalesce (index .Labels "com.docker.compose.project") (normalize .Name) }}.${DOMAIN:-test}`)'
     exposedByDefault: false
     network: traefik
 
@@ -40,6 +36,9 @@ metrics:
   prometheus:
     addEntryPointsLabels: true
     addServicesLabels: true
+
+log:
+  level: 'DEBUG'
 
 certificatesResolvers:
   leresolver:

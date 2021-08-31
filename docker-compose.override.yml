@@ -2,7 +2,6 @@ services:
   laravel.test:
     labels:
       - 'traefik.enable=true'
-      - 'traefik.http.routers.UNIQUE_SERVICE_NAME.rule=Host(`s3nparser.${DOMAIN:-test}`)'
       - 'traefik.http.routers.UNIQUE_SERVICE_NAME.tls=true'
       - 'traefik.http.services.UNIQUE_SERVICE_NAME.loadbalancer.server.port=80'
     networks:
