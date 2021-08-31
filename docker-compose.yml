@@ -5,24 +5,58 @@ services:
   traefik:
     image: traefik:2.5
     container_name: traefik
+    command:
+      - '--api=true'
+      - '--api.insecure=true'
+      - '--log=true'
+      - '--log.level=${LVS_LOG_LEVEL:-ERROR}'
+      - '--accesslog=true'
+      - '--ping=true'
+
+      - '--metrics.prometheus=true'
+      - '--metrics.prometheus.addrouterslabels=true'
+
+      - '--providers.docker=true'
+      - '--providers.docker.defaultRule=Host(`{{ coalesce (index .Labels "com.docker.compose.project") (normalize .Name) }}.${LVS_DOMAIN:-test}`)'
+      - '--providers.docker.exposedbydefault=false'
+      - '--providers.docker.network=traefik'
+
+      - '--entrypoints.web=true'
+      - '--entrypoints.web.address=:80'
+       
+      # Note: Delete everything below if you don't need https
+      
+      - '--entrypoints.web.http.redirections.entrypoint.permanent=false'
+      - '--entrypoints.web.http.redirections.entrypoint.to=websecure'
+
+      - '--entrypoints.websecure=true'
+      - '--entrypoints.websecure.address=:443'
+      - '--entrypoints.websecure.http.tls=true'
+      - '--entrypoints.websecure.http.tls.certresolver=leresolver'
+      - '--entrypoints.websecure.http.tls.domains[0].main=${LVS_DOMAIN:-test}'
+      - '--entrypoints.websecure.http.tls.domains[0].sans=*.${LVS_DOMAIN:-test}'
+
+      - '--certificatesresolvers.leresolver=true'
+      - '--certificatesresolvers.leresolver.acme.email=${LVS_LETSENCRYPT_EMAIL:-"admin@example.com"}'
+      - '--certificatesresolvers.leresolver.acme.caServer=${LVS_LETSENCRYPT_SERVER:-"https://acme-staging-v02.api.letsencrypt.org/directory"}'
+      - '--certificatesresolvers.leresolver.acme.storage=/letsencrypt/acme-v2.json'
+      - '--certificatesresolvers.leresolver.acme.tlschallenge=false'
+      - '--certificatesresolvers.leresolver.acme.dnschallenge=true'
+      - '--certificatesresolvers.leresolver.acme.dnschallenge.delaybeforecheck=15'
+      - '--certificatesresolvers.leresolver.acme.dnschallenge.provider=cloudflare'
+      - '--certificatesresolvers.leresolver.acme.dnschallenge.resolvers=1.1.1.1:53,8.8.8.8:53'
     labels:
       - 'traefik.enable=true'
       - 'traefik.http.routers.traefik.rule=Host(`traefik.${LVS_DOMAIN:-test}`)'
       - 'traefik.http.routers.traefik.service=api@internal'
-      - 'traefik.http.routers.traefik.entrypoints=websecure'
-      - 'traefik.http.routers.traefik.tls=true'
       - 'traefik.http.services.traefik.loadbalancer.server.port=8080'
     restart: always
     environment:
-      LVS_DOMAIN: ${LVS_DOMAIN:-test}
-      LVS_LETSENCRYPT_EMAIL: ${LVS_LETSENCRYPT_EMAIL:-"admin@example.com"}
-      LVS_LETSENCRYPT_SERVER: ${LVS_LETSENCRYPT_SERVER:-"https://acme-staging-v02.api.letsencrypt.org/directory"}
-      CF_DNS_API_TOKEN: ${LVS_CLOUDFLARE_TOKEN}
-      CF_ZONE_API_TOKEN: ${LVS_CLOUDFLARE_TOKEN}
+      CF_DNS_API_TOKEN: '${LVS_CLOUDFLARE_TOKEN}'
+      CF_ZONE_API_TOKEN: '${LVS_CLOUDFLARE_TOKEN}'
     volumes:
       - '/var/run/docker.sock:/var/run/docker.sock:ro'
       - 'traefik_letsencrypt:/letsencrypt'
-      - './traefik.yml:/etc/traefik/traefik.yml'
     ports:
       - '80:80'
       - '443:443'
@@ -36,12 +70,12 @@ services:
     container_name: portainer
     profiles:
       - all
+      - portainer
       - management
     labels:
       - 'traefik.enable=true'
       - 'traefik.http.routers.portainer.rule=Host(`portainer.${LVS_DOMAIN:-test}`)'
       - 'traefik.http.routers.portainer.entrypoints=websecure'
-      - 'traefik.http.routers.portainer.tls=true'
       - 'traefik.http.services.portainer.loadbalancer.server.port=9000'
     restart: always
     extra_hosts:
@@ -57,6 +91,7 @@ services:
     container_name: prometheus
     profiles:
       - all
+      - prometheus
       - metrics
     labels:
       - 'traefik.enable=true'

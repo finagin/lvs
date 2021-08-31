@@ -2,8 +2,7 @@ services:
   laravel.test:
     labels:
       - 'traefik.enable=true'
-      - 'traefik.http.routers.UNIQUE_SERVICE_NAME.tls=true'
-      - 'traefik.http.services.UNIQUE_SERVICE_NAME.loadbalancer.server.port=80'
+      - 'traefik.http.services.s3n.loadbalancer.server.port=80' # If expose port not 80
     networks:
       - traefik
 
