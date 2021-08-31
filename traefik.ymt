@@ -1,0 +1,54 @@
+defaultEntryPoints:
+  - websecure
+
+global:
+  checkNewVersion: true
+  sendAnonymousUsage: false
+
+entrypoints:
+  web:
+    address: ':80'
+    http:
+      redirections:
+        entryPoint:
+          to: websecure
+          scheme: https
+  websecure:
+    address: ':443'
+    http:
+      tls:
+        certResolver: leresolver
+        domains:
+          - main: 'lvs.finag.in'
+            sans:
+              - '*.lvs.finag.in'
+
+
+providers:
+  docker:
+    endpoint: unix:///var/run/docker.sock
+    defaultRule: 'HostRegexp(`{{ coalesce (index .Labels "com.docker.compose.project") (normalize .Name) }}.lvs.finag.in`)'
+    exposedByDefault: false
+    network: traefik
+
+api:
+  insecure: true
+  dashboard: true
+  debug: true
+
+metrics:
+  prometheus:
+    addEntryPointsLabels: true
+    addServicesLabels: true
+
+certificatesResolvers:
+  leresolver:
+    acme:
+      email: admin@example.com
+      caServer: https://acme-staging-v02.api.letsencrypt.org/directory
+      storage: /letsencrypt/acme-v2.json
+      dnsChallenge:
+        provider: cloudflare
+        resolvers:
+          - '1.1.1.1:53'
+          - '8.8.8.8:53'
