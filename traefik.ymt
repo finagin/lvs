@@ -16,14 +16,14 @@ entrypoints:
       tls:
         certResolver: leresolver
         domains:
-          - main: '${DOMAIN:-test}'
+          - main: '{{env "LVS_DOMAIN"}}'
             sans:
-              - '*.${DOMAIN:-test}'
+              - '*.{{env "LVS_DOMAIN"}}'
 
 providers:
   docker:
     endpoint: unix:///var/run/docker.sock
-    defaultRule: 'HostRegexp(`{{ coalesce (index .Labels "com.docker.compose.project") (normalize .Name) }}.${DOMAIN:-test}`)'
+    defaultRule: 'HostRegexp(`{{ coalesce (index .Labels "com.docker.compose.project") (normalize .Name) }}.{{env "LVS_DOMAIN"}}`)'
     exposedByDefault: false
     network: traefik
 
@@ -43,8 +43,8 @@ log:
 certificatesResolvers:
   leresolver:
     acme:
-      email: admin@example.com
-      caServer: https://acme-staging-v02.api.letsencrypt.org/directory
+      email: '{{env "LVS_LETSENCRYPT_EMAIL"}}'
+      caServer: '{{env "LVS_LETSENCRYPT_SERVER"}}'
       storage: /letsencrypt/acme-v2.json
       dnsChallenge:
         provider: cloudflare

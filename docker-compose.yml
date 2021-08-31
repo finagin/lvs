@@ -7,15 +7,18 @@ services:
     container_name: traefik
     labels:
       - 'traefik.enable=true'
-      - 'traefik.http.routers.traefik.rule=Host(`traefik.${DOMAIN:-test}`)'
+      - 'traefik.http.routers.traefik.rule=Host(`traefik.${LVS_DOMAIN:-test}`)'
       - 'traefik.http.routers.traefik.service=api@internal'
       - 'traefik.http.routers.traefik.entrypoints=websecure'
       - 'traefik.http.routers.traefik.tls=true'
       - 'traefik.http.services.traefik.loadbalancer.server.port=8080'
     restart: always
     environment:
-      CF_DNS_API_TOKEN: ${CLOUDFLARE_TOKEN}
-      CF_ZONE_API_TOKEN: ${CLOUDFLARE_TOKEN}
+      LVS_DOMAIN: ${LVS_DOMAIN:-test}
+      LVS_LETSENCRYPT_EMAIL: ${LVS_LETSENCRYPT_EMAIL:-"admin@example.com"}
+      LVS_LETSENCRYPT_SERVER: ${LVS_LETSENCRYPT_SERVER:-"https://acme-staging-v02.api.letsencrypt.org/directory"}
+      CF_DNS_API_TOKEN: ${LVS_CLOUDFLARE_TOKEN}
+      CF_ZONE_API_TOKEN: ${LVS_CLOUDFLARE_TOKEN}
     volumes:
       - '/var/run/docker.sock:/var/run/docker.sock:ro'
       - 'traefik_letsencrypt:/letsencrypt'
@@ -36,7 +39,7 @@ services:
       - management
     labels:
       - 'traefik.enable=true'
-      - 'traefik.http.routers.portainer.rule=Host(`portainer.${DOMAIN:-test}`)'
+      - 'traefik.http.routers.portainer.rule=Host(`portainer.${LVS_DOMAIN:-test}`)'
       - 'traefik.http.routers.portainer.entrypoints=websecure'
       - 'traefik.http.routers.portainer.tls=true'
       - 'traefik.http.services.portainer.loadbalancer.server.port=9000'
@@ -57,7 +60,7 @@ services:
       - metrics
     labels:
       - 'traefik.enable=true'
-      - 'traefik.http.routers.prometheus.rule=Host(`prometheus.${DOMAIN:-test}`)'
+      - 'traefik.http.routers.prometheus.rule=Host(`prometheus.${LVS_DOMAIN:-test}`)'
       - 'traefik.http.routers.prometheus.entrypoints=websecure'
       - 'traefik.http.routers.prometheus.tls=true'
       - 'traefik.http.services.prometheus.loadbalancer.server.port=9090'
