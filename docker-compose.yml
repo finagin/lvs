@@ -2,110 +2,204 @@ version: '3'
 
 services:
 
-  traefik:
-    image: traefik:2.5
-    container_name: traefik
-    command:
-      - '--api=true'
-      - '--api.insecure=true'
-      - '--log=true'
-      - '--log.level=${LVS_LOG_LEVEL:-ERROR}'
-      - '--accesslog=true'
-      - '--ping=true'
+    traefik:
+        image: traefik:v3.0
+        container_name: traefik
+        labels:
+            - 'traefik.enable=true'
+            - 'traefik.http.routers.traefik.rule=Host(`traefik.${LVS_DOMAIN:-test}`)'
+            - 'traefik.http.routers.traefik.entrypoints=web'
+            - 'traefik.http.routers.traefik.service=api@internal'
+            - 'traefik.http.services.traefik.loadbalancer.server.port=8080'
+        restart: unless-stopped
+        environment:
+            CF_DNS_API_TOKEN: '${LVS_CLOUDFLARE_TOKEN}'
+            CF_ZONE_API_TOKEN: '${LVS_CLOUDFLARE_TOKEN}'
+        ports:
+            - '80:80'
+            - '443:443'
+        extra_hosts:
+            - 'host.docker.internal:host-gateway'
+        command:
+            - '--api=true'
+            - '--log=true'
+            - '--log.level=${LVS_LOG_LEVEL:-ERROR}'
+            - '--accesslog=true'
+            - '--ping=true'
+            - '--ping.entryPoint=web'
 
-      - '--metrics.prometheus=true'
-      - '--metrics.prometheus.addrouterslabels=true'
+            - '--metrics.prometheus=true'
+            - '--metrics.prometheus.buckets=0.1,0.3,1.2,5.0,10.0'
+            - '--metrics.prometheus.entrypoint=web'
 
-      - '--providers.docker=true'
-      - '--providers.docker.defaultRule=Host(`{{ coalesce (index .Labels "com.docker.compose.project") (normalize .Name) }}.${LVS_DOMAIN:-test}`)'
-      - '--providers.docker.exposedbydefault=false'
-      - '--providers.docker.network=traefik'
+            - '--providers.docker=true'
+            - '--providers.docker.network=traefik'
+            - '--providers.docker.network=${COMPOSE_PROJECT_NAME}_lvs'
+            - '--providers.docker.defaultRule=Host(`{{ coalesce (index .Labels "com.docker.compose.project") (normalize .Name) }}.${LVS_DOMAIN:-test}`)'
+            - '--providers.docker.exposedByDefault=false'
+            - '--providers.docker.httpClientTimeout=900'
 
-      - '--entrypoints.web=true'
-      - '--entrypoints.web.address=:80'
-       
-      # Note: Delete everything below if you don't need https
-      
-      - '--entrypoints.web.http.redirections.entrypoint.permanent=false'
-      - '--entrypoints.web.http.redirections.entrypoint.to=websecure'
+            - '--entrypoints.web=true'
+            - '--entrypoints.web.address=:80'
 
-      - '--entrypoints.websecure=true'
-      - '--entrypoints.websecure.address=:443'
-      - '--entrypoints.websecure.http.tls=true'
-      - '--entrypoints.websecure.http.tls.certresolver=leresolver'
-      - '--entrypoints.websecure.http.tls.domains[0].main=${LVS_DOMAIN:-test}'
-      - '--entrypoints.websecure.http.tls.domains[0].sans=*.${LVS_DOMAIN:-test}'
+            # <editor-fold desc="Let's encrypt">
+            # Note: Uncomment everything below if you need https
+            #- '--entrypoints.web.http.redirections.entrypoint.permanent=false'
+            #- '--entrypoints.web.http.redirections.entrypoint.to=websecure'
+            #- '--entrypoints.websecure=true'
+            #- '--entrypoints.websecure.address=:443'
+            #- '--entrypoints.websecure.http.tls=true'
+            #- '--entrypoints.websecure.http.tls.certresolver=leresolver'
+            #- '--entrypoints.websecure.http.tls.domains[0].main=${LVS_DOMAIN:-test}'
+            #- '--entrypoints.websecure.http.tls.domains[0].sans=*.${LVS_DOMAIN:-test}'
+            #- '--certificatesresolvers.leresolver=true'
+            #- '--certificatesresolvers.leresolver.acme.email=${LVS_LETSENCRYPT_EMAIL:-"admin@example.com"}'
+            #- '--certificatesresolvers.leresolver.acme.caServer=${LVS_LETSENCRYPT_SERVER:-"https://acme-staging-v02.api.letsencrypt.org/directory"}'
+            #- '--certificatesresolvers.leresolver.acme.storage=/letsencrypt/acme-v2.json'
+            #- '--certificatesresolvers.leresolver.acme.tlschallenge=false'
+            #- '--certificatesresolvers.leresolver.acme.dnschallenge=true'
+            #- '--certificatesresolvers.leresolver.acme.dnschallenge.delaybeforecheck=15'
+            #- '--certificatesresolvers.leresolver.acme.dnschallenge.provider=cloudflare'
+            #- '--certificatesresolvers.leresolver.acme.dnschallenge.resolvers=1.1.1.1:53,8.8.8.8:53'
+            # </editor-fold>
+        volumes:
+            - '/var/run/docker.sock:/var/run/docker.sock:ro'
+            - '${LVS_CERTS:-traefik_letsencrypt}:/letsencrypt:Z'
+        networks:
+            - traefik
+            - lvs
+        healthcheck:
+            test: [ "CMD", "wget", "--no-verbose", "--spider", "http://healthcheck.${LVS_DOMAIN:-test}/ping" ]
+            retries: 3
+            timeout: 5s
 
-      - '--certificatesresolvers.leresolver=true'
-      - '--certificatesresolvers.leresolver.acme.email=${LVS_LETSENCRYPT_EMAIL:-"admin@example.com"}'
-      - '--certificatesresolvers.leresolver.acme.caServer=${LVS_LETSENCRYPT_SERVER:-"https://acme-staging-v02.api.letsencrypt.org/directory"}'
-      - '--certificatesresolvers.leresolver.acme.storage=/letsencrypt/acme-v2.json'
-      - '--certificatesresolvers.leresolver.acme.tlschallenge=false'
-      - '--certificatesresolvers.leresolver.acme.dnschallenge=true'
-      - '--certificatesresolvers.leresolver.acme.dnschallenge.delaybeforecheck=15'
-      - '--certificatesresolvers.leresolver.acme.dnschallenge.provider=cloudflare'
-      - '--certificatesresolvers.leresolver.acme.dnschallenge.resolvers=1.1.1.1:53,8.8.8.8:53'
-    labels:
-      - 'traefik.enable=true'
-      - 'traefik.http.routers.traefik.rule=Host(`traefik.${LVS_DOMAIN:-test}`)'
-      - 'traefik.http.routers.traefik.service=api@internal'
-      - 'traefik.http.services.traefik.loadbalancer.server.port=8080'
-    restart: always
-    environment:
-      CF_DNS_API_TOKEN: '${LVS_CLOUDFLARE_TOKEN}'
-      CF_ZONE_API_TOKEN: '${LVS_CLOUDFLARE_TOKEN}'
-    volumes:
-      - '/var/run/docker.sock:/var/run/docker.sock:ro'
-      - 'traefik_letsencrypt:/letsencrypt'
-    ports:
-      - '80:80'
-      - '443:443'
-    extra_hosts:
-      - 'host.docker.internal:host-gateway'
-    networks:
-      - traefik
+    # <editor-fold desc="Management">
+    portainer:
+        image: portainer/portainer-ce:2.19.4-alpine
+        container_name: portainer
+        profiles:
+            - all
+            - portainer
+            - management
+        labels:
+            - 'traefik.enable=true'
+            - 'traefik.http.routers.portainer.rule=Host(`portainer.${LVS_DOMAIN:-test}`)'
+            - 'traefik.http.routers.portainer.entrypoints=web'
+            - 'traefik.http.services.portainer.loadbalancer.server.port=9000'
+        restart: unless-stopped
+        extra_hosts:
+            - 'host.docker.internal:host-gateway'
+        volumes:
+            - '/var/run/docker.sock:/var/run/docker.sock'
+            - 'portainer-data:/data'
+        networks:
+            - lvs
+    # </editor-fold>
 
-  portainer:
-    image: portainer/portainer-ce:2.6.2-alpine
-    container_name: portainer
-    profiles:
-      - all
-      - portainer
-      - management
-    labels:
-      - 'traefik.enable=true'
-      - 'traefik.http.routers.portainer.rule=Host(`portainer.${LVS_DOMAIN:-test}`)'
-      - 'traefik.http.routers.portainer.entrypoints=websecure'
-      - 'traefik.http.services.portainer.loadbalancer.server.port=9000'
-    restart: always
-    extra_hosts:
-      host.docker.internal: host-gateway
-    volumes:
-      - '/var/run/docker.sock:/var/run/docker.sock'
-      - 'portainer_data:/data'
-    networks:
-      - traefik
+    # <editor-fold desc="Metrics">
+    prometheus:
+        image: prom/prometheus:${PROMETHEUS_VERSION:-latest}
+        container_name: prometheus
+        labels:
+            - 'traefik.enable=true'
+            - 'traefik.http.routers.prometheus.rule=Host(`prometheus.${LVS_DOMAIN:-test}`)'
+            - 'traefik.http.routers.prometheus.entrypoints=web'
+            - 'traefik.http.services.prometheus.loadbalancer.server.port=9090'
+        networks:
+            - lvs
+        profiles:
+            - all
+            - prometheus
+            - metrics
+    # </editor-fold>
 
-  prometheus:
-    image: prom/prometheus
-    container_name: prometheus
-    profiles:
-      - all
-      - prometheus
-      - metrics
-    labels:
-      - 'traefik.enable=true'
-      - 'traefik.http.routers.prometheus.rule=Host(`prometheus.${LVS_DOMAIN:-test}`)'
-      - 'traefik.http.routers.prometheus.entrypoints=websecure'
-      - 'traefik.http.routers.prometheus.tls=true'
-      - 'traefik.http.services.prometheus.loadbalancer.server.port=9090'
-    networks:
-      - traefik
+    # <editor-fold desc="Sentry">
+    sentry-base: &sentry-base
+        image: sentry:${LVS_SENTRY_VERSION:-9.1.2}
+        environment:
+            SENTRY_SECRET_KEY: '${LVS_SENTRY_SECRET_KEY:-""}'
+            SENTRY_REDIS_HOST: sentry-redis
+            SENTRY_POSTGRES_HOST: sentry-postgres
+            SENTRY_DB_USER: '${LVS_SENTRY_DB_USERNAME:-sentry}'
+            SENTRY_DB_PASSWORD: '${LVS_SENTRY_DB_PASSWORD:-sentry}'
+        networks:
+            - lvs-sentry
+        depends_on:
+            - sentry-redis
+            - sentry-postgres
+        profiles:
+            - never
+    sentry:
+        << : *sentry-base
+        container_name: sentry
+        labels:
+            - 'traefik.enable=true'
+            - 'traefik.http.routers.sentry.rule=Host(`sentry.${LVS_DOMAIN:-test}`)'
+            - 'traefik.http.routers.sentry.entrypoints=web'
+        networks:
+            - lvs
+            - lvs-sentry
+        profiles:
+            - all
+            - logging
+            - sentry
+    sentry-redis:
+        image: redis
+        container_name: sentry-redis
+        volumes:
+            - '${LVS_SENTRY_REDIS_VOLUME:-sentry-redis}:/data'
+        networks:
+            - lvs-sentry
+        profiles:
+            - all
+            - logging
+            - sentry
+    sentry-postgres:
+        image: postgres
+        container_name: sentry-postgres
+        environment:
+            POSTGRES_USER: '${LVS_SENTRY_DB_USERNAME:-sentry}'
+            POSTGRES_PASSWORD: '${LVS_SENTRY_DB_PASSWORD:-sentry}'
+        volumes:
+            - '${LVS_SENTRY_DB_VOLUME:-sentry-postgres}:/var/lib/postgresql/data'
+        networks:
+            - lvs-sentry
+        profiles:
+            - all
+            - logging
+            - sentry
+    sentry-cron:
+        << : *sentry-base
+        container_name: sentry-cron
+        command: [ 'sentry', 'run', 'cron' ]
+        profiles:
+            - all
+            - logging
+            - sentry
+    sentry-worker:
+        << : *sentry-base
+        container_name: sentry-worker
+        command: [ 'sentry', 'run', 'worker' ]
+        profiles:
+            - all
+            - logging
+            - sentry
+    # </editor-fold>
 
 volumes:
-  portainer_data:
-  traefik_letsencrypt:
+    portainer-data:
+        driver: local
+    sentry-redis:
+        driver: local
+    sentry-postgres:
+        driver: local
+    traefik_letsencrypt:
+        driver: local
 
 networks:
-  traefik:
-    external: true
+    lvs:
+        driver: bridge
+    lvs-sentry:
+        driver: bridge
+    traefik:
+        external: true
