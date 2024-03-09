@@ -3,7 +3,7 @@ version: '3'
 services:
 
     traefik:
-        image: traefik:v3.0
+        image: traefik:${LVS_TRAEFIK_VERSION:-3.0}
         container_name: traefik
         labels:
             - 'traefik.enable=true'
@@ -13,8 +13,8 @@ services:
             - 'traefik.http.services.traefik.loadbalancer.server.port=8080'
         restart: unless-stopped
         environment:
-            CF_DNS_API_TOKEN: '${LVS_CLOUDFLARE_TOKEN}'
-            CF_ZONE_API_TOKEN: '${LVS_CLOUDFLARE_TOKEN}'
+            CF_DNS_API_TOKEN: '${LVS_CLOUDFLARE_TOKEN:-""}'
+            CF_ZONE_API_TOKEN: '${LVS_CLOUDFLARE_TOKEN:-""}'
         ports:
             - '80:80'
             - '443:443'
@@ -75,12 +75,8 @@ services:
 
     # <editor-fold desc="Management">
     portainer:
-        image: portainer/portainer-ce:2.19.4-alpine
+        image: portainer/portainer-ce:${LVS_PORTAINER_VERSION:-2.19.4}-alpine
         container_name: portainer
-        profiles:
-            - all
-            - portainer
-            - management
         labels:
             - 'traefik.enable=true'
             - 'traefik.http.routers.portainer.rule=Host(`portainer.${LVS_DOMAIN:-test}`)'
@@ -94,11 +90,52 @@ services:
             - 'portainer-data:/data'
         networks:
             - lvs
+        profiles:
+            - all
+            - portainer
+            - management
+
+    registry:
+        image: registry:${LVS_REGISTRY_VERSION:-2.8}
+        container_name: registry
+        labels:
+            - 'traefik.enable=true'
+            - 'traefik.http.routers.registry.rule=Host(`registry.${LVS_DOMAIN:-test}`)'
+            - 'traefik.http.routers.registry.entrypoints=web'
+            - 'traefik.http.services.registry.loadbalancer.server.port=5000'
+        restart: unless-stopped
+        volumes:
+            - 'registry-data:/var/lib/registry'
+        networks:
+            - lvs
+        profiles:
+            - all
+            - registry
+            - management
+
+    registry-hub:
+        image: konradkleine/docker-registry-frontend:${LVS_REGISTRY_HUB_VERSION:-v2}
+        container_name: registry-hub
+        labels:
+            - 'traefik.enable=true'
+            - 'traefik.http.routers.portainer.rule=Host(`hub.registry.${LVS_DOMAIN:-test}`)'
+            - 'traefik.http.routers.portainer.entrypoints=web'
+        restart: unless-stopped
+        environment:
+            ENV_DOCKER_REGISTRY_HOST: 'registry'
+            ENV_DOCKER_REGISTRY_PORT: 5000
+            ENV_MODE_BROWSE_ONLY: true
+        networks:
+            - lvs
+        profiles:
+            - all
+            - registry
+            - management
     # </editor-fold>
 
     # <editor-fold desc="Metrics">
     prometheus:
-        image: prom/prometheus:${PROMETHEUS_VERSION:-latest}
+        image: prom/prometheus:${LVS_PROMETHEUS_VERSION:-v2.49.1}
         container_name: prometheus
         labels:
             - 'traefik.enable=true'
@@ -115,7 +152,7 @@ services:
 
     # <editor-fold desc="Sentry">
     sentry-base: &sentry-base
-        image: sentry:${LVS_SENTRY_VERSION:-9.1.2}
+        image: sentry:${LVS_SENTRY_VERSION:-9.1}
         environment:
             SENTRY_SECRET_KEY: '${LVS_SENTRY_SECRET_KEY:-""}'
             SENTRY_REDIS_HOST: sentry-redis
@@ -133,9 +170,9 @@ services:
         << : *sentry-base
         container_name: sentry
         labels:
-            - 'traefik.enable=true'
-            - 'traefik.http.routers.sentry.rule=Host(`sentry.${LVS_DOMAIN:-test}`)'
-            - 'traefik.http.routers.sentry.entrypoints=web'
+          - 'traefik.enable=true'
+          - 'traefik.http.routers.sentry.rule=Host(`sentry.${LVS_DOMAIN:-test}`)'
+          - 'traefik.http.routers.sentry.entrypoints=web'
         networks:
             - lvs
             - lvs-sentry
@@ -144,7 +181,7 @@ services:
             - logging
             - sentry
     sentry-redis:
-        image: redis
+        image: redis:${LVS_SENTRY_REDIS_VERSION:-7.2}-alpine
         container_name: sentry-redis
         volumes:
             - '${LVS_SENTRY_REDIS_VOLUME:-sentry-redis}:/data'
@@ -155,7 +192,7 @@ services:
             - logging
             - sentry
     sentry-postgres:
-        image: postgres
+        image: postgres:${LVS_SENTRY_POSTGRES_VERSION:-16.1}-alpine
         container_name: sentry-postgres
         environment:
             POSTGRES_USER: '${LVS_SENTRY_DB_USERNAME:-sentry}'
@@ -188,6 +225,8 @@ services:
 
 volumes:
     portainer-data:
+        driver: local
+    registry-data:
         driver: local
     sentry-redis:
         driver: local
