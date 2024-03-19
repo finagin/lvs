@@ -64,7 +64,7 @@ services:
             # </editor-fold>
         volumes:
             - '/var/run/docker.sock:/var/run/docker.sock:ro'
-            - '${LVS_CERTS:-traefik_letsencrypt}:/letsencrypt:Z'
+            - '${LVS_CERTS:-traefik-letsencrypt}:/letsencrypt:Z'
         networks:
             - traefik
             - lvs
@@ -170,9 +170,9 @@ services:
         << : *sentry-base
         container_name: sentry
         labels:
-          - 'traefik.enable=true'
-          - 'traefik.http.routers.sentry.rule=Host(`sentry.${LVS_DOMAIN:-test}`)'
-          - 'traefik.http.routers.sentry.entrypoints=web'
+            - 'traefik.enable=true'
+            - 'traefik.http.routers.sentry.rule=Host(`sentry.${LVS_DOMAIN:-test}`)'
+            - 'traefik.http.routers.sentry.entrypoints=web'
         networks:
             - lvs
             - lvs-sentry
@@ -223,6 +223,26 @@ services:
             - sentry
     # </editor-fold>
 
+    # <editor-fold desc="IDE">
+    jetbrains:
+        build:
+            context: build/jetbrains
+            args:
+                USERNAME: '${LVS_JETBRAINS_USERNAME:-lvs}'
+                PASSWORD: '${LVS_JETBRAINS_PASSWORD}'
+                LVSGROUP: '${LVS_JETBRAINS_GROUP_ID:-20}'
+        container_name: jetbrains
+        ports:
+            - '${LVS_JETBRAINS_PORT:-4467}:22'
+        volumes:
+            - '${LVS_JETBRAINS_PROJECTS:-jetbrains-projects}:/home/lvs/projects'
+            - '${LVS_JETBRAINS_CACHE:-jetbrains-cache}:/home/lvs/.cache/JetBrains'
+        profiles:
+            - all
+            - ide
+            - jetbrains
+    # </editor-fold>
+
 volumes:
     portainer-data:
         driver: local
@@ -232,7 +252,11 @@ volumes:
         driver: local
     sentry-postgres:
         driver: local
-    traefik_letsencrypt:
+    traefik-letsencrypt:
+        driver: local
+    jetbrains-cache:
+        driver: local
+    jetbrains-projects:
         driver: local
 
 networks:
