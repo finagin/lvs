@@ -63,7 +63,7 @@ services:
             #- '--certificatesresolvers.leresolver.acme.dnschallenge.resolvers=1.1.1.1:53,8.8.8.8:53'
             # </editor-fold>
         volumes:
-            - '/var/run/docker.sock:/var/run/docker.sock:ro'
+            - '${LVS_DOCKER_SOCKET:-/var/run/docker.sock}:/var/run/docker.sock:ro'
             - '${LVS_CERTS:-traefik-letsencrypt}:/letsencrypt:Z'
         networks:
             - traefik
@@ -86,7 +86,7 @@ services:
         extra_hosts:
             - 'host.docker.internal:host-gateway'
         volumes:
-            - '/var/run/docker.sock:/var/run/docker.sock'
+            - '${LVS_DOCKER_SOCKET:-/var/run/docker.sock}:/var/run/docker.sock:ro'
             - 'portainer-data:/data'
         networks:
             - lvs
@@ -229,7 +229,7 @@ services:
             context: build/jetbrains
             args:
                 USERNAME: '${LVS_JETBRAINS_USERNAME:-lvs}'
-                PASSWORD: '${LVS_JETBRAINS_PASSWORD}'
+                PASSWORD: '${LVS_JETBRAINS_PASSWORD:-lvs}'
                 LVSGROUP: '${LVS_JETBRAINS_GROUP_ID:-20}'
         container_name: jetbrains
         ports:
@@ -237,6 +237,7 @@ services:
         volumes:
             - '${LVS_JETBRAINS_PROJECTS:-jetbrains-projects}:/home/lvs/projects'
             - '${LVS_JETBRAINS_CACHE:-jetbrains-cache}:/home/lvs/.cache/JetBrains'
+            - '${LVS_DOCKER_SOCKET:-/var/run/docker.sock}:/var/run/docker.sock:ro'
         profiles:
             - all
             - ide
