@@ -244,6 +244,32 @@ services:
             - jetbrains
     # </editor-fold>
 
+    # <editor-fold desc="Knowledge Base">
+    knowledge:
+        image: gollumwiki/gollum:${LVS_KNOWLEDGE_VERSION:-5.3}
+        labels:
+            - 'traefik.enable=true'
+            - 'traefik.http.routers.knowledge.rule=Host(`knowledge.${LVS_DOMAIN:-test}`)'
+            - 'traefik.http.services.knowledge.loadbalancer.server.port=4567'
+        environment:
+            GOLLUM_AUTHOR_USERNAME: '${LVS_KNOWLEDGE_AUTHOR_USERNAME:-Knowledge Base}'
+            GOLLUM_AUTHOR_EMAIL: '${LVS_KNOWLEDGE_AUTHOR_EMAIL:-knowledge@example.com}'
+        volumes:
+            - '${LVS_KNOWLEDGE_VOLUME:-knowledge-data}:/wiki'
+            - '${LVS_KNOWLEDGE_CONFIG:-/dev/null}:/etc/gollum/config.rb:ro'
+        command:
+            - '--mathjax'
+            - '--local-time'
+            - '--allow-uploads=page'
+            - '--user-icons=gravatar'
+            - '--config=/etc/gollum/config.rb'
+        networks:
+            - lvs
+        profiles:
+            - all
+            - knowledge
+    # </editor-fold>
+
 volumes:
     portainer-data:
         driver: local
@@ -258,6 +284,8 @@ volumes:
     jetbrains-cache:
         driver: local
     jetbrains-projects:
+        driver: local
+    knowledge-data:
         driver: local
 
 networks:
