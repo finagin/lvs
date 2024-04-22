@@ -1,20 +1,45 @@
-version: '3'
+name: 'lvs'
+
+x-sentry-depends: &sentry-depends
+    sentry-redis:
+        condition: service_healthy
+    sentry-postgres:
+        condition: service_healthy
+
+x-sentry-base: &sentry-base
+    image: sentry:${LVS_SENTRY_VERSION:-9.1}
+    environment:
+        SENTRY_SECRET_KEY: '${LVS_SENTRY_SECRET_KEY:-"5%05(6a7+69a^e2f@*kw9_di##@kfdf%5ekci02ewd+7b=k6&z"}'
+        SENTRY_REDIS_HOST: sentry-redis
+        SENTRY_POSTGRES_HOST: sentry-postgres
+        SENTRY_DB_USER: '${LVS_SENTRY_DB_USERNAME:-sentry}'
+        SENTRY_DB_PASSWORD: '${LVS_SENTRY_DB_PASSWORD:-sentry}'
+    networks:
+        - lvs-sentry
+    depends_on:
+        <<: *sentry-depends
+        sentry-upgrade:
+            condition: service_completed_successfully
+        sentry-create-user:
+            condition: service_completed_successfully
+    profiles:
+        - all
+        - logging
+        - sentry
 
 services:
 
     traefik:
         image: traefik:${LVS_TRAEFIK_VERSION:-3.0}
-        container_name: traefik
         labels:
             - 'traefik.enable=true'
             - 'traefik.http.routers.traefik.rule=Host(`traefik.${LVS_DOMAIN:-test}`)'
-            - 'traefik.http.routers.traefik.entrypoints=web'
             - 'traefik.http.routers.traefik.service=api@internal'
             - 'traefik.http.services.traefik.loadbalancer.server.port=8080'
         restart: unless-stopped
         environment:
-            CF_DNS_API_TOKEN: '${LVS_CLOUDFLARE_TOKEN:-""}'
-            CF_ZONE_API_TOKEN: '${LVS_CLOUDFLARE_TOKEN:-""}'
+            CF_DNS_API_TOKEN: '${LVS_TRAEFIK_CLOUDFLARE_TOKEN:-""}'
+            CF_ZONE_API_TOKEN: '${LVS_TRAEFIK_CLOUDFLARE_TOKEN:-""}'
         ports:
             - '80:80'
             - '443:443'
@@ -53,8 +78,8 @@ services:
             #- '--entrypoints.websecure.http.tls.domains[0].main=${LVS_DOMAIN:-test}'
             #- '--entrypoints.websecure.http.tls.domains[0].sans=*.${LVS_DOMAIN:-test}'
             #- '--certificatesresolvers.leresolver=true'
-            #- '--certificatesresolvers.leresolver.acme.email=${LVS_LETSENCRYPT_EMAIL:-"admin@example.com"}'
-            #- '--certificatesresolvers.leresolver.acme.caServer=${LVS_LETSENCRYPT_SERVER:-"https://acme-staging-v02.api.letsencrypt.org/directory"}'
+            #- '--certificatesresolvers.leresolver.acme.email=${LVS_TRAEFIK_LETSENCRYPT_EMAIL:-"admin@example.com"}'
+            #- '--certificatesresolvers.leresolver.acme.caServer=${LVS_TRAEFIK_LETSENCRYPT_SERVER:-"https://acme-staging-v02.api.letsencrypt.org/directory"}'
             #- '--certificatesresolvers.leresolver.acme.storage=/letsencrypt/acme-v2.json'
             #- '--certificatesresolvers.leresolver.acme.tlschallenge=false'
             #- '--certificatesresolvers.leresolver.acme.dnschallenge=true'
@@ -64,7 +89,7 @@ services:
             # </editor-fold>
         volumes:
             - '${LVS_DOCKER_SOCKET:-/var/run/docker.sock}:/var/run/docker.sock:ro'
-            - '${LVS_CERTS:-traefik-letsencrypt}:/letsencrypt:Z'
+            - '${LVS_TRAEFIK_CERTS_VOLUME:-traefik-letsencrypt}:/letsencrypt:Z'
         networks:
             - traefik
             - lvs
@@ -75,19 +100,17 @@ services:
 
     # <editor-fold desc="Management">
     portainer:
-        image: portainer/portainer-ce:${LVS_PORTAINER_VERSION:-2.19.4}-alpine
-        container_name: portainer
+        image: portainer/portainer-ce:${LVS_PORTAINER_VERSION:-2.19}-alpine
         labels:
             - 'traefik.enable=true'
             - 'traefik.http.routers.portainer.rule=Host(`portainer.${LVS_DOMAIN:-test}`)'
-            - 'traefik.http.routers.portainer.entrypoints=web'
             - 'traefik.http.services.portainer.loadbalancer.server.port=9000'
         restart: unless-stopped
         extra_hosts:
             - 'host.docker.internal:host-gateway'
         volumes:
             - '${LVS_DOCKER_SOCKET:-/var/run/docker.sock}:/var/run/docker.sock:ro'
-            - 'portainer-data:/data'
+            - '${LVS_PORTAINER_VOLUME:-portainer-data}:/data'
         networks:
             - lvs
         profiles:
@@ -97,15 +120,13 @@ services:
 
     registry:
         image: registry:${LVS_REGISTRY_VERSION:-2.8}
-        container_name: registry
         labels:
             - 'traefik.enable=true'
             - 'traefik.http.routers.registry.rule=Host(`registry.${LVS_DOMAIN:-test}`)'
-            - 'traefik.http.routers.registry.entrypoints=web'
             - 'traefik.http.services.registry.loadbalancer.server.port=5000'
         restart: unless-stopped
         volumes:
-            - 'registry-data:/var/lib/registry'
+            - '${LVS_REGISTRY_VOLUME:-registry-data}:/var/lib/registry'
         networks:
             - lvs
         profiles:
@@ -115,11 +136,9 @@ services:
 
     registry-hub:
         image: konradkleine/docker-registry-frontend:${LVS_REGISTRY_HUB_VERSION:-v2}
-        container_name: registry-hub
         labels:
             - 'traefik.enable=true'
             - 'traefik.http.routers.portainer.rule=Host(`hub.registry.${LVS_DOMAIN:-test}`)'
-            - 'traefik.http.routers.portainer.entrypoints=web'
         restart: unless-stopped
         environment:
             ENV_DOCKER_REGISTRY_HOST: 'registry'
@@ -133,117 +152,6 @@ services:
             - management
     # </editor-fold>
 
-    # <editor-fold desc="Metrics">
-    prometheus:
-        image: prom/prometheus:${LVS_PROMETHEUS_VERSION:-v2.49.1}
-        container_name: prometheus
-        labels:
-            - 'traefik.enable=true'
-            - 'traefik.http.routers.prometheus.rule=Host(`prometheus.${LVS_DOMAIN:-test}`)'
-            - 'traefik.http.routers.prometheus.entrypoints=web'
-            - 'traefik.http.services.prometheus.loadbalancer.server.port=9090'
-        networks:
-            - lvs
-        profiles:
-            - all
-            - prometheus
-            - metrics
-    # </editor-fold>
-
-    # <editor-fold desc="Sentry">
-    sentry-base: &sentry-base
-        image: sentry:${LVS_SENTRY_VERSION:-9.1}
-        environment:
-            SENTRY_SECRET_KEY: '${LVS_SENTRY_SECRET_KEY:-""}'
-            SENTRY_REDIS_HOST: sentry-redis
-            SENTRY_POSTGRES_HOST: sentry-postgres
-            SENTRY_DB_USER: '${LVS_SENTRY_DB_USERNAME:-sentry}'
-            SENTRY_DB_PASSWORD: '${LVS_SENTRY_DB_PASSWORD:-sentry}'
-        networks:
-            - lvs-sentry
-        depends_on:
-            - sentry-redis
-            - sentry-postgres
-        profiles:
-            - never
-    sentry:
-        << : *sentry-base
-        container_name: sentry
-        labels:
-            - 'traefik.enable=true'
-            - 'traefik.http.routers.sentry.rule=Host(`sentry.${LVS_DOMAIN:-test}`)'
-            - 'traefik.http.routers.sentry.entrypoints=web'
-        networks:
-            - lvs
-            - lvs-sentry
-        profiles:
-            - all
-            - logging
-            - sentry
-    sentry-redis:
-        image: redis:${LVS_SENTRY_REDIS_VERSION:-7.2}-alpine
-        container_name: sentry-redis
-        volumes:
-            - '${LVS_SENTRY_REDIS_VOLUME:-sentry-redis}:/data'
-        networks:
-            - lvs-sentry
-        profiles:
-            - all
-            - logging
-            - sentry
-    sentry-postgres:
-        image: postgres:${LVS_SENTRY_POSTGRES_VERSION:-16.1}-alpine
-        container_name: sentry-postgres
-        environment:
-            POSTGRES_USER: '${LVS_SENTRY_DB_USERNAME:-sentry}'
-            POSTGRES_PASSWORD: '${LVS_SENTRY_DB_PASSWORD:-sentry}'
-        volumes:
-            - '${LVS_SENTRY_DB_VOLUME:-sentry-postgres}:/var/lib/postgresql/data'
-        networks:
-            - lvs-sentry
-        profiles:
-            - all
-            - logging
-            - sentry
-    sentry-cron:
-        << : *sentry-base
-        container_name: sentry-cron
-        command: [ 'sentry', 'run', 'cron' ]
-        profiles:
-            - all
-            - logging
-            - sentry
-    sentry-worker:
-        << : *sentry-base
-        container_name: sentry-worker
-        command: [ 'sentry', 'run', 'worker' ]
-        profiles:
-            - all
-            - logging
-            - sentry
-    # </editor-fold>
-
-    # <editor-fold desc="IDE">
-    jetbrains:
-        build:
-            context: build/jetbrains
-            args:
-                USERNAME: '${LVS_JETBRAINS_USERNAME:-lvs}'
-                PASSWORD: '${LVS_JETBRAINS_PASSWORD:-lvs}'
-                LVSGROUP: '${LVS_JETBRAINS_GROUP_ID:-20}'
-        container_name: jetbrains
-        ports:
-            - '${LVS_JETBRAINS_PORT:-4467}:22'
-        volumes:
-            - '${LVS_JETBRAINS_PROJECTS:-jetbrains-projects}:/home/lvs/projects'
-            - '${LVS_JETBRAINS_CACHE:-jetbrains-cache}:/home/lvs/.cache/JetBrains'
-            - '${LVS_DOCKER_SOCKET:-/var/run/docker.sock}:/var/run/docker.sock:ro'
-        profiles:
-            - all
-            - ide
-            - jetbrains
-    # </editor-fold>
-
     # <editor-fold desc="Knowledge Base">
     knowledge:
         image: gollumwiki/gollum:${LVS_KNOWLEDGE_VERSION:-5.3}
@@ -252,7 +160,7 @@ services:
             - 'traefik.http.routers.knowledge.rule=Host(`knowledge.${LVS_DOMAIN:-test}`)'
             - 'traefik.http.services.knowledge.loadbalancer.server.port=4567'
         environment:
-            GOLLUM_AUTHOR_USERNAME: '${LVS_KNOWLEDGE_AUTHOR_USERNAME:-Knowledge Base}'
+            GOLLUM_AUTHOR_USERNAME: '${LVS_KNOWLEDGE_AUTHOR_NAME:-Knowledge Base}'
             GOLLUM_AUTHOR_EMAIL: '${LVS_KNOWLEDGE_AUTHOR_EMAIL:-knowledge@example.com}'
         volumes:
             - '${LVS_KNOWLEDGE_VOLUME:-knowledge-data}:/wiki'
@@ -270,22 +178,99 @@ services:
             - knowledge
     # </editor-fold>
 
-volumes:
-    portainer-data:
-        driver: local
-    registry-data:
-        driver: local
+    # <editor-fold desc="IDE">
+    jetbrains:
+        build:
+            context: build/jetbrains
+            args:
+                USERNAME: '${LVS_JETBRAINS_USERNAME:-lvs}'
+                PASSWORD: '${LVS_JETBRAINS_PASSWORD:-lvs}'
+                LVSGROUP: '${LVS_JETBRAINS_GROUP_ID:-20}'
+        ports:
+            - '${LVS_JETBRAINS_PORT:-4467}:22'
+        volumes:
+            - '${LVS_JETBRAINS_PROJECTS:-jetbrains-projects}:/home/lvs/projects'
+            - '${LVS_JETBRAINS_CACHE:-jetbrains-cache}:/home/lvs/.cache/JetBrains'
+            - '${LVS_DOCKER_SOCKET:-/var/run/docker.sock}:/var/run/docker.sock:ro'
+        profiles:
+            - all
+            - jetbrains
+            - ide
+    # </editor-fold>
+
+    # <editor-fold desc="Sentry">
+    sentry:
+        << : *sentry-base
+        labels:
+            - 'traefik.enable=true'
+            - 'traefik.http.routers.sentry.rule=Host(`sentry.${LVS_DOMAIN:-test}`)'
+            - 'traefik.http.services.sentry.loadbalancer.server.port=9000'
+        networks:
+            - lvs
+            - lvs-sentry
+    sentry-upgrade:
+        <<: *sentry-base
+        depends_on:
+            <<: *sentry-depends
+        command: [ 'upgrade', '--noinput', '--traceback', '--verbosity', '0' ]
+    sentry-create-user:
+        <<: *sentry-base
+        depends_on:
+            <<: *sentry-depends
+            sentry-upgrade:
+                condition: service_completed_successfully
+        command: [ 'createuser', '--email=sentry','--password=sentry',  '--no-superuser', '--no-input' ]
+    sentry-cron:
+        << : *sentry-base
+        command: [ 'run', 'cron' ]
+    sentry-worker:
+        << : *sentry-base
+        command: [ 'run', 'worker' ]
     sentry-redis:
-        driver: local
+        image: redis:${LVS_SENTRY_REDIS_VERSION:-7.2}-alpine
+        volumes:
+            - '${LVS_SENTRY_REDIS_VOLUME:-sentry-redis}:/data'
+        networks:
+            - lvs-sentry
+        profiles:
+            - all
+            - logging
+            - sentry
+        healthcheck:
+            test: [ "CMD", "redis-cli", "ping" ]
     sentry-postgres:
-        driver: local
-    traefik-letsencrypt:
-        driver: local
+        image: postgres:${LVS_SENTRY_POSTGRES_VERSION:-16.1}-alpine
+        environment:
+            POSTGRES_USER: '${LVS_SENTRY_DB_USERNAME:-sentry}'
+            POSTGRES_PASSWORD: '${LVS_SENTRY_DB_PASSWORD:-sentry}'
+        volumes:
+            - '${LVS_SENTRY_DB_VOLUME:-sentry-postgres}:/var/lib/postgresql/data'
+        networks:
+            - lvs-sentry
+        profiles:
+            - all
+            - logging
+            - sentry
+        healthcheck:
+            test: [ "CMD", "pg_isready", "-U", "${LVS_SENTRY_DB_USERNAME:-sentry}" ]
+    # </editor-fold>
+
+volumes:
     jetbrains-cache:
         driver: local
     jetbrains-projects:
         driver: local
     knowledge-data:
+        driver: local
+    portainer-data:
+        driver: local
+    registry-data:
+        driver: local
+    sentry-postgres:
+        driver: local
+    sentry-redis:
+        driver: local
+    traefik-letsencrypt:
         driver: local
 
 networks:
